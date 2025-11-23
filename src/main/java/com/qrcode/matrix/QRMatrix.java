@@ -13,7 +13,10 @@ public class QRMatrix {
         modules = new boolean[SIZE][SIZE];
         functionModules = new boolean[SIZE][SIZE];
         drawFinderPattern(); 
-        drawSeparators();
+        drawSeparators();//not needed?
+        drawTimingPatterns();
+        drawDarkModule();
+
         
     
     }
@@ -58,15 +61,30 @@ public class QRMatrix {
 
     private void drawSeparators()
     {
-
+        //they are already made?
     }
 
+    private void drawTimingPatterns()
+    {
+        int row = 8;
+        int col = 6;
 
-    // Methods you'll need:
-    // - setModule(int row, int col, boolean value)
-    // - getModule(int row, int col)
-    // - isFunction(int row, int col)
-    // - toString() for debugging
+        for (; row <= 12; row++)
+            modules[row][col] = (row % 2 == 0);
+        
+
+        row = 6;
+        col = 8;
+
+        for (; col <= 12; col++)
+            modules[row][col] = (col % 2 == 0);
+    }
+
+    private void drawDarkModule() 
+    {
+        modules[13][8] = true;  //always black at this position
+    }
+
 
     public String toString() {
         StringBuilder sb = new StringBuilder();
