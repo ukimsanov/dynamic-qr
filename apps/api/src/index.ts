@@ -15,39 +15,10 @@ type Bindings = {
   QR_SERVICE_URL?: string;
 };
 
-type QrContentType = "url" | "vcard" | "wifi" | "email" | "sms";
-
-type QrContentData = {
-  url?: string;
-  name?: string;
-  phone?: string;
-  email?: string;
-  ssid?: string;
-  password?: string;
-  encryption?: "WPA" | "WEP" | "nopass";
-  to?: string;
-  subject?: string;
-  body?: string;
-  number?: string;
-  message?: string;
-};
-
-type QrCustomization = {
-  colors?: {
-    foreground?: string;
-    background?: string;
-  };
-  errorCorrection?: "L" | "M" | "Q" | "H";
-  size?: number;
-};
-
 type ShortenRequestBody = {
   long_url: string;
   alias?: string;
   expires_at?: string;
-  content_type?: QrContentType;
-  qr_data?: QrContentData;
-  qr_customization?: QrCustomization;
 };
 
 type UrlRow = {
@@ -88,10 +59,9 @@ async function createUrl(env: Bindings, params: {
   qrStatus?: string;
   qrUrl?: string | null;
   contentType?: string;
-  qrConfig?: Record<string, any>;
 }): Promise<UrlRow> {
   const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
-  const { shortCode, longUrl, alias, expiresAt, qrStatus, qrUrl, contentType, qrConfig } = params;
+  const { shortCode, longUrl, alias, expiresAt, qrStatus, qrUrl, contentType } = params;
 
   const { data, error } = await supabase
     .from('urls')
@@ -102,8 +72,7 @@ async function createUrl(env: Bindings, params: {
       expires_at: expiresAt ?? null,
       qr_status: qrStatus ?? null,
       qr_url: qrUrl ?? null,
-      content_type: contentType ?? 'url',
-      qr_config: qrConfig ?? {}
+      content_type: contentType ?? 'url'
     })
     .select()
     .single();
@@ -184,39 +153,18 @@ async function cacheSet(env: Bindings, code: string, longUrl: string): Promise<v
   await redis.set(`r:${code}`, longUrl, { ex: 86400 }); // 24 hours
 }
 
-// QR generation function
-async function generateQr(env: Bindings, params: {
-  contentType: QrContentType;
-  data: QrContentData;
-  customization?: QrCustomization;
-}): Promise<{ status: "ready" | "failed"; qrUrl: string | null }> {
-  const { contentType, data, customization } = params;
-
+// QR generation function (simplified - just generates QR for the short URL)
+async function generateQr(env: Bindings, shortUrl: string): Promise<{ status: "ready" | "failed"; qrUrl: string | null }> {
   if (!env.QR_SERVICE_URL) {
     return { status: "failed", qrUrl: null };
   }
 
   try {
-    // Build QR content based on type
-    let content = "";
-    if (contentType === "url") {
-      content = data.url || "";
-    } else if (contentType === "vcard") {
-      content = `BEGIN:VCARD\nVERSION:3.0\nFN:${data.name}\nTEL:${data.phone}\nEMAIL:${data.email}\nEND:VCARD`;
-    } else if (contentType === "wifi") {
-      content = `WIFI:T:${data.encryption};S:${data.ssid};P:${data.password};;`;
-    } else if (contentType === "email") {
-      content = `mailto:${data.to}?subject=${encodeURIComponent(data.subject || "")}&body=${encodeURIComponent(data.body || "")}`;
-    } else if (contentType === "sms") {
-      content = `sms:${data.number}?body=${encodeURIComponent(data.message || "")}`;
-    }
-
     const response = await fetch(env.QR_SERVICE_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        content,
-        customization: customization || {}
+        content: shortUrl
       })
     });
 
@@ -248,27 +196,20 @@ app.post("/api/shorten", async (c) => {
 
   const expiresAt = body.expires_at ?? null;
   const alias = body.alias?.trim() || undefined;
-  const contentType = body.content_type ?? "url";
-  const qrCustomization = body.qr_customization;
 
-  // Prepare QR data based on content type
-  let qrData: QrContentData;
-  if (contentType === "url") {
-    qrData = { url: body.long_url };
-  } else {
-    qrData = body.qr_data ?? {};
+  // Validate alias length (max 7 characters)
+  if (alias && alias.length > 7) {
+    return c.json({ error: "alias must be 7 characters or less" }, 400);
   }
 
   let lastError: unknown;
   for (let i = 0; i < 3; i++) {
     const code = alias ?? generateCode(7);
+    const shortUrl = `${c.env.PUBLIC_BASE_URL}/${code}`;
+
     try {
-      // Generate QR code with content type and customization
-      const qrResult = await generateQr(c.env, {
-        contentType,
-        data: qrData,
-        customization: qrCustomization
-      });
+      // Generate QR code for the short URL
+      const qrResult = await generateQr(c.env, shortUrl);
 
       const row = await createUrl(c.env, {
         shortCode: code,
@@ -277,18 +218,15 @@ app.post("/api/shorten", async (c) => {
         expiresAt,
         qrStatus: qrResult.status,
         qrUrl: qrResult.qrUrl,
-        contentType,
-        qrConfig: qrCustomization
+        contentType: "url"
       });
 
-      const shortUrl = `${c.env.PUBLIC_BASE_URL}/${row.short_code}`;
       void cacheSet(c.env, row.short_code, row.long_url);
 
       return c.json({
         code: row.short_code,
         short_url: shortUrl,
-        qr_url: row.qr_url,
-        content_type: row.content_type
+        qr_url: row.qr_url
       });
     } catch (err: any) {
       lastError = err;
@@ -309,10 +247,8 @@ app.post("/api/shorten", async (c) => {
 // Resolve URL endpoint
 app.get("/api/resolve/:code", async (c) => {
   const code = c.req.param("code");
-  console.log(`[RESOLVE] Received request for code: ${code}`);
 
   if (!code) {
-    console.log(`[RESOLVE] No code provided`);
     return c.json({ error: "not found" }, 404);
   }
 
@@ -357,7 +293,6 @@ app.get("/health", (c) => {
 // Catch-all route for short code redirects (must be last!)
 app.get("/:code", async (c) => {
   const code = c.req.param("code");
-  console.log(`[REDIRECT] Handling redirect for code: ${code}`);
 
   if (!code || code.includes("/")) {
     return c.json({ error: "not found" }, 404);
@@ -366,14 +301,12 @@ app.get("/:code", async (c) => {
   // Check cache first
   const cached = await cacheGet(c.env, code);
   if (cached) {
-    console.log(`[REDIRECT] Cache hit for ${code}, redirecting to ${cached}`);
     return c.redirect(cached, 301);
   }
 
   // Look up in database
   const row = await findUrlByCode(c.env, code);
   if (!row) {
-    console.log(`[REDIRECT] Code ${code} not found in database`);
     return c.json({ error: "not found" }, 404);
   }
 
@@ -381,7 +314,6 @@ app.get("/:code", async (c) => {
   if (row.expires_at) {
     const expires = new Date(row.expires_at);
     if (expires.getTime() < Date.now()) {
-      console.log(`[REDIRECT] Code ${code} has expired`);
       return c.json({ error: "expired" }, 410);
     }
   }
@@ -389,7 +321,6 @@ app.get("/:code", async (c) => {
   // Cache and redirect
   void cacheSet(c.env, code, row.long_url);
   void incrementClick(c.env, code);
-  console.log(`[REDIRECT] Redirecting ${code} to ${row.long_url}`);
   return c.redirect(row.long_url, 301);
 });
 
