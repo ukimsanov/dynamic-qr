@@ -233,6 +233,10 @@ app.post("/api/shorten", async (c) => {
   if (alias && alias.length > 7) {
     return c.json({ error: "alias must be 7 characters or less" }, 400);
   }
+  // Validate alias characters (only allow letters, numbers, hyphens, underscores)
+  if (alias && !/^[a-zA-Z0-9-_]+$/.test(alias)) {
+    return c.json({ error: "alias must contain only letters, numbers, hyphens, and underscores" }, 400);
+  }
 
   // Create clients once per request
   const supabase = getSupabaseClient(c.env);
