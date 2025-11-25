@@ -18,7 +18,7 @@ A Java command-line application that generates QR codes with byte or alphanumeri
 cd qr-generator
 ```
 
-do this before running the following commands
+Do this before running the following commands.
 
 ### Build
 ```bash
