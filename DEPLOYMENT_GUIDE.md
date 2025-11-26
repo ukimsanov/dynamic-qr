@@ -271,7 +271,7 @@ npx wrangler deploy
 Create a short URL and verify QR code generation:
 
 ```bash
-curl -X POST https://qr-shortener-api.ularkimsanov7.workers.dev/api/shorten \
+curl -X POST https://b.ularkimsanov.com/api/shorten \
   -H "Content-Type: application/json" \
   -d '{
     "url": "https://github.com",
