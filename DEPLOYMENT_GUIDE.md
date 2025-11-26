@@ -281,7 +281,7 @@ curl -X POST https://qr-shortener-api.ularkimsanov7.workers.dev/api/shorten \
 **Expected response**:
 ```json
 {
-  "shortUrl": "https://qr-shortener-api.ularkimsanov7.workers.dev/abc123",
+  "shortUrl": "https://b.ularkimsanov.com/abc123",
   "shortCode": "abc123",
   "longUrl": "https://github.com",
   "expiresAt": "2025-11-26T12:00:00Z",
